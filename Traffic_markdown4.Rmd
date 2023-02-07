@@ -1,0 +1,815 @@
+---
+title: "Metro Interstate Traffic Volumen"
+author: "Simon Gamboa"
+date: "2022-07-04"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# GOAL
+We will be analyzing how changes in the climate can affect the traffic volume for westbound interstate I-94 from 2012-2018. Then we carry out a multilinear regression model to predict how temperature, raining and snow could impact the traffic volume.
+
+# Data set information
+We selected the metro interstate traffic volume data set from the UCI Machine Learning Repository (2022). The data was captured from hourly Interstate 94 Westbound traffic volume for MN DoT ATR station 301, roughly midway between Minneapolis and St Paul, MN. Hourly weather features and holidays included for impacts on traffic volume.The data set belong to Traffic data from Minnesota Department of Transportation - USA. 
+
+#STEP 1: READ AND PROCESS THE DATA
+##1.1 Read the data
+```{r}
+df <- read.csv("Metro_Interstate_Traffic_Volume.csv", header=TRUE, sep=",")
+head(df, 3)
+
+```
+
+##1.2 Process the data
+###1.2.1 check unique value
+```{r}
+unique(df$holiday)
+unique(df$weather_main)
+```
+
+###1.2.2 check null and blank value, drop row that contain null or blank value
+```{r}
+sum(is.na(df))
+sum(df=="")
+```
+
+###1.2.3 split date and time column variable
+```{r}
+
+df$time <- as.integer(format(as.POSIXct(df$date_time), format = "%H"))
+head(df)
+```
+###1.2.3 drop unneeded columns and rows
+```{r}
+df <- df[,-c(7,8)]
+head(df)
+
+#There were deleted temperature values as 0 because is outside kelvin range
+library(dplyr)
+df <- df %>% filter(temp >= 243)
+
+```
+
+
+#STEP 2: TRANSFORMING DATA SET
+##2.1 check categories variable frequency
+##load & required package
+```{r}
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("funModeling")
+library(funModeling)
+```
+
+## 2.2 First approaching of exploation data analytics (EDA)
+```{r}
+basic_eda <- function(df)
+{
+  glimpse(df)
+  print(status(df))
+  freq(df, path_out = ".") 
+  print(profiling_num(df))
+  plot_num(df)
+  describe(df)
+}
+basic_eda(df) 
+```
+
+
+
+
+
+```{r}
+## check frequency
+
+count(df, weather_main)
+count(df, holiday)
+count(df, time)
+count(df, temp)
+```
+
+##2.2 combine various holiday into holiday value
+```{r}
+
+df <- df %>% mutate(holiday = case_when(holiday == "None"   ~ "No",
+                                            TRUE  ~  "Yes"))
+
+head(df)
+```
+
+###2.3 group various weather value
+##====================================
+## good weather - Clear
+## moderately good weather - Clouds
+## moderately bad weather - Fog, Haze, Smoke, Mist, Drizzle
+## bad weather - Thunderstorm, Squall, Rain, snow
+```{r}
+df <- df %>% mutate(weather_main = case_when(weather_main == "Thunderstorm"  | weather_main == "Squall" | weather_main == "Rain" | weather_main == "Snow"  ~
+                                               "bad weather", weather_main == "Fog" |
+                                               weather_main == "Haze" |
+                                               weather_main == "Smoke" |
+                                               weather_main == "Mist" |
+                                               weather_main == "Drizzle" ~ "moderately bad weather",
+                                             weather_main == "Clouds"  ~ "moderately good weather",
+                                             weather_main == "Clear"  ~ "good weather"
+                                             )
+                    )
+head(df)
+```
+
+#STEP 3: EXPLORE THE DATA
+##PLOTS
+## weather vs. traffic volume
+## holiday vs. traffic volume
+## time vs. traffic volume
+
+```{r}
+#weather vs. traffic volume
+df$weather_main <- factor(df$weather)
+
+plot(df$weather_main, df$traffic_volume, main="Weather vs. Traffic Volume", xlab = "Weather", ylab="Traffic Volume", pch="*", col="blue", cex=2)
+```
+
+
+```{r fig1, fig.height = 4, fig.width = 7}
+# Weather conditions vs temperature 
+p <- ggplot(df, aes(x=temp, y=weather_main)) +  
+  geom_boxplot(outlier.alpha = 0.1, fill='blue') + 
+  theme_minimal(base_size = 8) + xlim(225, 325) +
+  labs(title = "Temperature (°K) in different climate donditions",
+       x = "Temperature (°K)", y = "Weather conditions main") +
+  theme(plot.title = element_text(size=16),
+        axis.title.x = element_text(size=14),
+        axis.title.y = element_text(size=14))
+p
+```
+
+```{r}
+#holiday vs. traffic volume
+df$holiday <- factor(df$holiday)
+
+plot(df$holiday, df$traffic_volume, main="Holiday vs. Traffic Volume", xlab = "Holiday", ylab="Traffic Volume", pch="*", col="blue", cex=0.5)
+```
+
+```{r}
+## time vs. traffic volume
+plot(df$time, df$traffic_volume, main="Time vs. Traffic Volume", xlab = "Time (hours)", ylab="Traffic Volume", pch="*", col="blue", cex=1)
+```
+
+#STEP 4: CONVERTING CATEGORICAL VARIABLES TO DUMMY VARIABLES
+
+##4.1 subset for holiday and weather
+
+```{r}
+cat_data <- subset(df, select=c(holiday, weather_main))
+head(cat_data)
+```
+##4.2 get dummy variables in R, use the model.matrix() function
+```{r}
+holiday_Dumm <- model.matrix(~holiday, data=cat_data)
+weather_main_Dumm <- model.matrix(~weather_main, data=cat_data)
+head(holiday_Dumm)
+head(weather_main_Dumm)
+```
+
+##4.3 bind the dummies to the original data
+```{r}
+holiday <- holiday_Dumm[,c(2)]
+good_weather <- weather_main_Dumm[,c(2)]
+moderately_bad_weather <- weather_main_Dumm[,c(3)]
+moderately_good_weather <- weather_main_Dumm[,c(4)]
+df1 <- df[,-c(1,6)]
+
+df2 <- cbind(df1,holiday,moderately_bad_weather,moderately_good_weather,good_weather)
+
+head(df2)
+```
+
+
+#SAVING CLEANED DATA SET
+```{r}
+write.csv(df2, "final_df.csv")
+
+```
+
+
+# GOAL: We will be analysing how traffic volume is affected by weather conditions
+
+# STEP 3 MULTILINEAR REGRESSION MODEL
+## 3.1 Reading data set cleaned
+```{r}
+metro_df <- read.csv("final_df.csv", header = TRUE, sep = ",")
+str(metro_df)
+```
+
+# STEP 4: FORMATTING AND REMOVING COLUMNS
+
+```{r}
+#Removing unnecessary column
+metro_df <- metro_df[,-c(1)]
+str(metro_df)
+```
+
+# STEP 5: SELECTING NUMERIC VARIABLE TO LOG TRANSFORMATION
+
+```{r}
+metro_df <- metro_df %>% dplyr::select(where(is.numeric))
+str(metro_df)
+```
+
+
+# STEP 6: ASSESSING THE EXPLANATORY MODEL
+
+## 6.1. We modelling the relationship between Traffic volume and  weather conditions throug out different day and time moments
+
+```{r}
+full_model_1 <- lm(traffic_volume~., data = metro_df)
+options(scipen = 999)
+summary(full_model_1)
+```
+
+## 6.2. Finding outliers, selecting and deleting outliers
+
+```{r}
+cookDis <- cooks.distance(full_model_1)
+plot(cookDis, pch='*', cex=0.8, main='Outliers by Cooks Distance Method')
+abline(h=4*mean(cookDis, na.rm=TRUE), col='red')
+text(x=1:length(cookDis)+1, y=cookDis, labels = ifelse(cookDis>4*mean(cookDis, na.rm = TRUE), names(cookDis),""), col = "blue")
+```
+
+
+## 6.3. Selecting and Deleting outliers
+
+```{r}
+outliers_rows <- cookDis>4*mean(cookDis)
+
+df_outliers <- cbind(metro_df, outliers_rows)
+nrow(df_outliers)
+
+nrow(df_outliers[(df_outliers$outliers_rows=='FALSE'),])
+nrow(df_outliers[(df_outliers$outliers_rows=='TRUE'),])
+
+#deleting outliers
+df_outliers <- df_outliers[(df_outliers$outliers_rows=='FALSE'), ]
+df_outliers <- subset(df_outliers, select = -c(outliers_rows))
+```
+
+## STEP 7: TESTING THE EXPLANATORY MODEL FROM ORIGINAL DATA SET WITHOUT OUTLIERS
+
+```{r}
+#Model 1 Original data set
+
+model_1_full <- lm(traffic_volume~., data = df_outliers)
+options(scipen = 999)
+summary(model_1_full)
+```
+
+# STEP 8: IMPROVING THE EXPLANATORY MODEL WITH STEPWISE REGRESSION MODEL 
+```{r}
+library(MASS)
+
+#Model 2 Reducing the original model with Stepwise regression model
+
+model_2_step <- stepAIC(full_model_1, direction = "backward", trace = FALSE)
+summary(model_2_step)
+```
+
+## STEP 9: EVALUATION OF MODELS BASED ON Akaike Information Criteria (AIC) ANALYSIS AND R-SQUARED SCORE
+
+```{r}
+
+# Evaluations model from original data set without outliers
+
+full_model_AIC <- AIC(model_1_full)
+step_model_AIC <- AIC(model_2_step)
+
+print(paste0("Full model     AIC score: ", full_model_AIC))
+print(paste0("Full mode      R-squared: ", summary(model_1_full)$r.squared))
+print(paste0(""))
+print(paste0("Stepwise model AIC score: ", step_model_AIC))
+print(paste0("Stepwise model R-squared: ", summary(model_2_step)$r.squared))
+```
+
+
+
+# STEP 10: LOG TRANSFORMATION OF ORIGINAL DATA SET
+
+```{r}
+
+# Log transformation of numeric variables from original data set without outliers
+
+metro_Log <- df_outliers
+
+metro_Log[c("temp", "rain_1h", "snow_1h", "clouds_all", "traffic_volume", "time")] <- log1p(metro_Log[c("temp", "rain_1h", "snow_1h", "clouds_all", "traffic_volume", "time")])
+
+```
+
+# STEP 11:  RUNNING MODELS LOG TRANSFORMATED 
+## 10.1 Full model Log transformated
+
+```{r}
+# Model 3 Log transformation
+
+model_3_full_log <- lm(traffic_volume~., data = metro_Log)
+summary(model_3_full_log)
+```
+
+
+## 11.2 Stepwise model of Full model Log transformated
+```{r}
+# Model 4 reducing model 3 Stepwise model (Log) with stepwise regression
+
+model_4_step_log <- stepAIC(model_3_full_log, direction = "backward", trace = FALSE)
+options(scipen = 999)
+summary(model_4_step_log)
+```
+
+## 11.3 Comparation of model accuracy assessment based on R-squared scores
+
+```{r}
+print(paste0("*************** Original data set ***************"))
+print(paste0(""))
+print(paste0("Full mode            R-squared: ", summary(model_1_full)$r.squared))
+print(paste0("Stepwise model       R-squared: ", summary(model_2_step)$r.squared))
+print(paste0(""))
+print(paste0("********** Log transformated data set ***********"))
+print(paste0(""))
+print(paste0("Full model (Log)     R-squared: ", summary(model_3_full_log)$r.squared))
+print(paste0("Stepwise model (Log) R-squared: ", summary(model_4_step_log)$r.squared))
+```
+
+
+## STEP 12 CANDIDATE MODELS FROM ORIGINAL AND LOG TRANSFORMATED DATA SET 
+```{r}
+library(AICcmodavg)
+# Candidate model
+candidate_models <- list('Full model'= model_1_full, 'Stepwise model'= model_2_step, 'Full model (Log)'= model_3_full_log, 'Stepwise model (Log)'= model_4_step_log)
+
+selectionTable <- aictab(cand.set = candidate_models)
+selectionTable
+```
+
+The best model fitted with the best predictors was Stepwise model (Log)
+
+```{r}
+# The best model
+summary(model_4_step_log)
+```
+
+## 12.1 Analysing candidate models
+According to the candidate models, it was found that the step wise regression model with Log transformation (Step wise model (Log)) got an AICc = 107934.6 being the lowest score compared with other models. The Step wise model (Log) was fitted with next variables: Temperature, Raining (1h), Clouds, daytime, holiday, and categorical weather. Then, we can use most of independent variables to explain traffic volume changes with a R-squared statistic of 0.42 that means the model explained around to 42% of the variation in the traffic volume. We can see that the rain has a negative effect over traffic volume while temperature has a positive effect. For example, a 1 unit increase in raining (1h) traffic volume decrease around to 8% while the temperature can increase the traffic volume near to 1.3 times.
+
+
+# STEP 13: splitting the dataset into 90% trining set and set 10% testing set for prediction models
+
+```{r}
+library(caTools)
+
+set.seed(145)
+#Create a copy
+metro_log_split_df <- metro_Log
+train_part <- sample.split(metro_log_split_df$traffic_volume, SplitRatio = 0.75)
+metro_log_split_Train <- subset(metro_log_split_df, train_part==TRUE)
+metro_log_split_Test <- subset(metro_log_split_df, train_part==FALSE)
+
+print(paste0("Full data set:           ",nrow(metro_log_split_df)))
+print(paste0("Training data set (90%): ",nrow(metro_log_split_Train)))
+print(paste0("Testing data set (10%):  ",nrow(metro_log_split_Test)))
+```
+
+
+# STEP 14: Modelling training dataset
+```{r}
+# training model
+model_train_1 <- lm(traffic_volume~., data = metro_log_split_Train)
+#step wise training model
+model_train_2_step <- stepAIC(model_train_1, direction = "backward", trace = FALSE)
+options(scipen = 999)
+
+# Candidate model list
+candidate_Train_models <- list("Training model" = model_train_1, "Stepwise training model" = model_train_2_step)
+
+# Best candidate model table
+selection_Training_models <- aictab(cand.set = candidate_Train_models)
+selection_Training_models
+```
+
+# 14.1 Candidate models comparation
+```{r}
+
+candidate_models <- list("Full model"= model_1_full, "Stepwise model"= model_2_step, "Full model (Log)"= model_3_full_log, "Stepwise model (Log)"= model_4_step_log)
+
+selectionTable <- aictab(cand.set = candidate_models)
+print(paste0("***********            Full Models              ***********"))
+selectionTable
+print(paste0("-----------------------------------------------------------"))
+print(paste0("***********           Training Models           ***********"))
+selection_Training_models
+
+```
+
+# 14.2 Selecting the best fitting model
+The best fitting model was "Stepwise training model" which has the next formula:
+
+formula = traffic_volume ~ temp + rain_1h + clouds_all + time + 
+    holiday + moderately_bad_weather + moderately_good_weather + 
+    good_weather
+
+
+```{r}
+
+#The best model from Full data set
+summary(model_4_step_log)
+best_model_full_dataset <- model_4_step_log
+print("************************************************************************")
+#The best model from Training data set
+summary(model_train_2_step)
+best_model_training_dataset <- model_train_2_step
+```
+
+# 14.3 Creating a new data frame with the variables of the best fitting model
+```{r}
+myvars <- c("traffic_volume", "temp", "rain_1h", "clouds_all", "time", "holiday", "moderately_bad_weather", "moderately_good_weather", "good_weather")
+
+df_best_model <- metro_log_split_df[myvars]
+names(df_best_model)
+
+```
+
+## 14.4 Full model with the new data set
+```{r}
+set.seed(145)
+#backup
+df_split_best_model <- df_best_model
+train_part1 <-  sample.split(df_split_best_model$traffic_volume, SplitRatio = 0.75)
+df_split_train1 <-  subset(df_split_best_model, train_part==TRUE)
+df_split_test1 <-  subset(df_split_best_model, train_part==FALSE)
+
+print(paste0("Split the new data set from best model:          ",nrow(df_split_best_model)))
+print(paste0("Training the new data set from best model (90%): ",nrow(df_split_train1)))
+print(paste0("Testing the new data set from best model(10%):   ",nrow(df_split_test1)))
+```
+
+# 14.5 Training the best model
+```{r}
+train_best_model <- lm(traffic_volume ~., data = df_split_train1)
+options(scipen = 999)
+summary(train_best_model)
+```
+
+
+```{r}
+
+#Temperature x Residuals Plot
+plot(train_best_model$residuals~df_split_train1$temp[order(df_split_train1$temp)],
+ main="Temperature x Residuals",
+ xlab="Temperature (°K)", ylab="Residuals")
+abline(h=0,lty=2)
+#Histogram of Residuals
+hist(train_best_model$residuals, main="Histogram of Residuals",
+ ylab="Residuals")
+#Q-Q Plot
+qqnorm(train_best_model$residuals)
+qqline(train_best_model$residuals)
+```
+
+
+# STEP 15 DISPLAYING PREDICTED, ACTUAL, AND RESIDUALS VALUES.
+
+```{r}
+library(forecast)
+#Prediction of the best model
+best_model_training_dataset_pred <- predict(train_best_model, df_split_train1)
+
+#Training Model
+
+print("-------------Validation Model---------------------")
+print("-------------  Best Model    ---------------------")
+accuracy(best_model_training_dataset_pred, df_split_train1$traffic_volume)
+```
+# 15.1 Display the dataframe of predicted values
+```{r}
+pred_values <- data.frame("Predicted" = best_model_training_dataset_pred[1:50],
+                          "Actual" = df_split_train1$traffic_volume[1:50],
+                          "Residual" = best_model_training_dataset_pred[1:50] - df_split_train1$traffic_volume[1:50])
+pred_values
+```
+
+
+## 15.2 Visualilization of predicted and actual values
+```{r}
+plot(predict(train_best_model),                             
+     df_split_train1$traffic_volume,
+     xlab = "Predicted Values",
+     ylab = "Observed Values", main = "Predicted vs. Actual values of the traffic volumen")
+abline(a = 0,                                      
+       b = 1,
+       col = "red",
+       lwd = 2)
+```
+
+
+
+# STEP 16 Visualization of predicted values from the best model
+```{r}
+
+#install.packages("jtools", "sjPlot", "sjmisc")
+library(jtools)
+library(sjPlot)
+library(sjmisc)
+
+# Plotting the best model
+set_theme(base = theme_bw())
+
+best_model_full_dataset
+best_model_training_dataset
+plot_model(best_model_training_dataset, group.terms = c(4,1,2,4,4,2,2,2))
+
+```
+
+
+## 16.1 Getting predicted values from independent variables
+
+### 16.1.1 Getting predicted values from log transfomated data set
+```{r}
+# We got predicted values based on different scenarios
+y <- get_model_data(
+  train_best_model,
+  type = c("pred"),
+  colors = "Set1",
+  case = "parsed",
+  digits = 2
+)
+y
+
+```
+
+### 16.1.2 reversing Log transformated values to real values in order to analysis and make understandeable interpretation of predictions
+```{r}
+c <- do.call(rbind.data.frame, y) |> as.data.frame()
+real_predicted_values <- exp(c[,1:5])
+print(real_predicted_values)
+
+```
+### Loading table library to reports
+```{r}
+#install.packages("flextable")
+library(flextable)
+```
+
+
+### 16.1.3 Predicted values to temperature and traffic volume
+
+$temp
+Adjusted for:
+                 rain_1h = 1.051271
+              clouds_all = 21.115344
+                    time = 9.679401
+                 holiday = 0.00
+  moderately_bad_weather = 0.00
+ moderately_good_weather = 0.00
+            good_weather = 0.00
+
+```{r}
+values <- c(0.05,3.05,2.27)
+values <- exp(values)
+values
+
+temp_df <- real_predicted_values[1:4,]
+names(temp_df)[1] <- "Temperature (°K)"
+
+temp_tb <- flextable(head(temp_df))
+temp_tb <- temp_tb %>% color(j = "Temperature (°K)", color = "blue", part = "all") %>% 
+  bold(j = c("Temperature (°K)", "predicted"), bold = TRUE)
+temp_tb <- theme_vanilla(temp_tb)
+temp_tb
+```
+
+### 16.1.4 Predicted values to raining 1 hour and traffic volume
+
+$rain_1h
+Adjusted for:
+                    temp = 281.46
+              clouds_all = 1.051
+                    time = 21.11
+                 holiday = 0.00
+  moderately_bad_weather = 0.00
+ moderately_good_weather = 0.00
+            good_weather = 0.00
+```{r}
+
+values <- c(5.64,3.05,2.27)
+values <- exp(values)
+#values
+
+rain_1h_df <- real_predicted_values[5:10,]
+names(rain_1h_df)[1] <- "rain_1h"
+
+rain_tb <- flextable(head(rain_1h_df))
+rain_tb <- rain_tb %>% color(j = "rain_1h", color = "blue", part = "all") %>% 
+  bold(j = c("rain_1h", "predicted"), bold = TRUE)
+rain_tb <- theme_vanilla(rain_tb)
+rain_tb
+```
+
+
+### 16.1.5 Predicted values to the clouds (%) and traffic volume
+
+$Clouds_all
+Adjusted for:
+                    temp = 281.46
+                 rain_1h = 1.051271
+                    time = 9.679
+                 holiday = 0.00
+  moderately_bad_weather = 0.00
+ moderately_good_weather = 0.00
+            good_weather = 0.00
+```{r}
+
+values <- c(5.64,0.05,2.27)
+values <- exp(values)
+#values
+
+clouds_df <- real_predicted_values[11:21,]
+names(clouds_df)[1] <- "Clouds"
+
+clouds_tb <- flextable(head(clouds_df))
+clouds_tb <- clouds_tb %>% color(j = "Clouds", color = "blue", part = "all") %>% 
+  bold(j = c("Clouds", "predicted"), bold = TRUE)
+clouds_tb <- theme_vanilla(clouds_tb)
+clouds_tb
+```
+
+### 16.1.6 Predicted values to the daytime and traffic volume
+
+$time
+Adjusted for:
+                    temp = 281.46
+                 rain_1h = 1.051
+              clouds_all = 21.115
+                 holiday = 0.00
+  moderately_bad_weather = 0.00
+ moderately_good_weather = 0.00
+            good_weather = 0.00
+```{r}
+values <- c(5.64,0.05,3.05)
+values <- exp(values)
+#values
+
+time_df <- real_predicted_values[22:38,]
+names(time_df)[1] <- "Daytime"
+
+daytime_tb <- flextable(head(time_df))
+daytime_tb <- daytime_tb %>% color(j = "Daytime", color = "blue", part = "all") %>% 
+  bold(j = c("Daytime", "predicted"), bold = TRUE)
+daytime_tb <- theme_vanilla(daytime_tb)
+daytime_tb
+```
+
+### 16.1.7 Predicted values to the holiday and traffic volume
+
+$holiday
+Adjusted for:
+                    temp = 281.46
+                 rain_1h = 1.051
+              clouds_all = 3.05
+                    time = 9.679
+  moderately_bad_weather = 0.00
+ moderately_good_weather = 0.00
+            good_weather = 0.00
+```{r}
+holiday_df <- real_predicted_values[39:40,]
+names(holiday_df)[1] <- "Holiday"
+
+
+holiday_tb <- flextable(head(holiday_df))
+holiday_tb <- holiday_tb %>% color(j = "Holiday", color = "blue", part = "all") %>% 
+  bold(j = c("Holiday", "predicted"), bold = TRUE)
+holiday_tb <- theme_vanilla(holiday_tb)
+holiday_tb
+```
+
+### 16.1.7 Predicted values to the Moderately_bad_weather conditions and traffic volume
+
+$moderately_bad_weather
+Adjusted for:
+                    temp = 281.46
+                 rain_1h = 1.051
+              clouds_all = 3.05
+                    time = 9.679
+                 holiday = 0.00
+ moderately_good_weather = 0.00
+            good_weather = 0.00
+```{r}
+weather_df1 <- real_predicted_values[41:42,]
+names(weather_df1)[1] <- "Moderately_bad_weather"
+
+wc_tb1 <- flextable(head(weather_df1))
+wc_tb1 <- wc_tb1 %>% color(j = "Moderately_bad_weather", color = "blue", part = "all") %>% 
+  bold(j = c("Moderately_bad_weather", "predicted"), bold = TRUE)
+wc_tb1 <- theme_vanilla(wc_tb1)
+wc_tb1
+
+```
+
+### 16.1.8 Predicted values to the Moderately_good_weather conditions and traffic volume
+$moderately_good_weather
+Adjusted for:
+                    temp = 281.46
+                 rain_1h = 1.051
+              clouds_all = 3.05
+                    time = 9.679
+                 holiday = 0.00
+  moderately_bad_weather = 0.00
+            good_weather = 0.00
+
+```{r}
+weather_df2 <- real_predicted_values[43:44,]
+names(weather_df2)[1] <- "Moderately_good_weather"
+
+wc_tb2 <- flextable(head(weather_df2))
+wc_tb2 <- wc_tb2 %>% color(j = "Moderately_good_weather", color = "blue", part = "body") %>% 
+  bold(j = c("Moderately_good_weather", "predicted"), bold = TRUE)
+wc_tb2 <- theme_vanilla(wc_tb2)
+wc_tb2
+```
+### 16.1.8 Predicted values to the good_weather conditions and traffic volume
+$good_weather
+Adjusted for:
+                    temp = 281.46
+                 rain_1h = 1.051
+              clouds_all = 3.05
+                    time = 9.679
+                 holiday = 0.00
+  moderately_bad_weather = 0.00
+ moderately_good_weather = 0.00
+
+```{r}
+weather_df3 <- real_predicted_values[45:46,]
+names(weather_df3)[1] <- "Good_weather"
+
+wc_tb3 <- flextable(head(weather_df3))
+wc_tb3 <- wc_tb3 %>% color(j = "Good_weather", color = "blue", part = "all") %>% 
+  bold(j = c("Good_weather", "predicted"), bold = TRUE)
+wc_tb3 <- theme_vanilla(wc_tb3)
+wc_tb3
+```
+
+
+## Visualization of the best model by independent variables
+```{r}
+set_theme(base = theme_bw())
+
+# Temperature vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("temp"), colors = "blue")
+
+# Raining (1 hour) vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("rain_1h"))
+
+# Daytime vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("time"))
+
+# Holiday vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("holiday"))
+
+# Clouds (%) vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("clouds_all"))
+
+# moderately_bad_weather vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("moderately_bad_weather"))
+
+# moderately_good_weather vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("moderately_good_weather"))
+
+# good_weather vs. traffic volume
+plot_model(train_best_model, type = "pred", terms = c("good_weather"))
+
+```
+
+
+```{r}
+names(df_split_train1)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
