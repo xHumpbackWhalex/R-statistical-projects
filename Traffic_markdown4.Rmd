@@ -2,9 +2,7 @@
 title: "Metro Interstate Traffic Volumen"
 author: "Simon Gamboa"
 date: "2022-07-04"
-output:
-  pdf_document: default
-  html_document: default
+output: github_document
 ---
 
 # GOAL
@@ -12,6 +10,25 @@ We will be analyzing how changes in the climate can affect the traffic volume fo
 
 # Data set information
 We selected the metro interstate traffic volume data set from the UCI Machine Learning Repository (2022). The data was captured from hourly Interstate 94 Westbound traffic volume for MN DoT ATR station 301, roughly midway between Minneapolis and St Paul, MN. Hourly weather features and holidays included for impacts on traffic volume.The data set belong to Traffic data from Minnesota Department of Transportation - USA. 
+
+#LOAD LIBRARIES
+```{r upload libraries, message=FALSE, echo=FALSE}
+library(dplyr)
+library(tidyverse)
+library(here)
+library(readxl)
+library(funModeling)
+library(MASS)
+library(AICcmodavg)
+library(caTools)
+library(forecast)
+library(jtools)
+library(sjPlot)
+library(sjmisc)
+library(flextable)
+library(gitcreds)
+```
+
 
 #STEP 1: READ AND PROCESS THE DATA
 ##1.1 Read the data
@@ -86,7 +103,7 @@ basic_eda(df)
 count(df, weather_main)
 count(df, holiday)
 count(df, time)
-count(df, temp)
+#count(df, temp)
 ```
 
 ##2.2 combine various holiday into holiday value
